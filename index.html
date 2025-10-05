@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Happy Birthday — Interactive Letter</title>
+  <style>
+    /* Basic reset */
+    *{box-sizing:border-box;margin:0;padding:0}
+    html,body{height:100%;font-family: 'Segoe UI', Roboto, Arial, sans-serif;background:#f7f3ff;overflow:hidden}
+
+    /* Background: animated confetti canvas sits behind everything */
+    #confettiCanvas{position:fixed;inset:0;z-index:0;pointer-events:none}
+
+    /* Floating "HAPPY BIRTHDAY" words */
+    .bg-words{
+      position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:1;pointer-events:none;opacity:.18;mix-blend-mode:screen
+    }
+    .bg-words span{
+      font-size:6vw;font-weight:800;letter-spacing:6px;transform:translateY(0);animation:floatWords 8s linear infinite;
+      color:#ff7fb2;text-shadow:0 2px 12px rgba(0,0,0,0.08)
+    }
+    @keyframes floatWords{
+      0%{transform:translateY(-10px) rotate(-3deg)}
+      50%{transform:translateY(6px) rotate(2deg)}
+      100%{transform:translateY(-10px) rotate(-3deg)}
+    }
+
+    /* Center stage container */
+    .stage{position:relative;z-index:2;height:100%;display:flex;align-items:center;justify-content:center;padding:20px}
+
+    /* Envelope styles */
+    .envelope-wrap{width:520px;max-width:92vw;position:relative;display:flex;flex-direction:column;align-items:center;gap:18px}
+
+    .envelope{
+      width:100%;height:320px;position:relative;perspective:1200px;cursor:pointer
+    }
+
+    /* Back of envelope (paper) */
+    .envelope .body{
+      width:100%;height:100%;background:linear-gradient(160deg,#fff 0%,#fffaf1 100%);border-radius:8px;box-shadow:0 10px 30px rgba(15,15,20,0.12);position:relative;overflow:hidden;border:2px solid rgba(0,0,0,0.04)
+    }
+
+    /* flap */
+    .envelope .flap{
+      position:absolute;left:0;right:0;top:-2px;height:60%;transform-origin:top center;background:linear-gradient(160deg,#ffd9f2,#fff9ea);border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,0.08);z-index:6;transition:transform .9s cubic-bezier(.2,.9,.2,1)
+    }
+    .envelope.open .flap{transform:rotateX(180deg) translateY(-2%)}
+
+    /* letter */
+    .letter{
+      width:86%;height:76%;background:linear-gradient(180deg,#fff,#fffefc);position:absolute;left:7%;top:12%;z-index:4;border-radius:4px;padding:26px 34px;box-shadow:0 6px 20px rgba(12,12,20,0.06);transform:translateY(10%);opacity:0;transition:transform .9s cubic-bezier(.2,.9,.2,1),opacity .5s
+    }
+    .envelope.open .letter{transform:translateY(-12%);opacity:1}
+
+    /* Letter text styling */
+    .letter .content{font-size:18px;line-height:1.6;color:#222;white-space:pre-wrap}
+    .letter .signature{display:block;margin-top:18px;font-weight:700;color:#3b2b63}
+
+    /* Controls */
+    .controls{display:flex;gap:10px}
+    .btn{background:#ff8fb2;border:none;padding:10px 16px;border-radius:8px;color:#fff;font-weight:700;cursor:pointer;box-shadow:0 6px 18px rgba(255,140,170,0.18)}
+    .btn.secondary{background:#6f8cff}
+
+    /* Balloons container (absolute so balloons can escape) */
+    .balloon-stage{position:fixed;inset:0;z-index:3;pointer-events:none}
+    .balloon{position:absolute;bottom:10%;width:56px;height:72px;border-radius:50% 50% 50% 50%;display:flex;align-items:center;justify-content:center;transform-origin:center bottom;animation:floatUp linear forwards}
+    .string{position:absolute;left:50%;transform:translateX(-50%);top:72%;width:2px;height:120px;background:linear-gradient(#b98,#d3b);opacity:.9}
+
+    @keyframes floatUp{
+      0%{transform:translateY(0) scale(0.95)}
+      100%{transform:translateY(-150vh) scale(1)}
+    }
+
+    /* confetti pieces style used by canvas drawing not CSS */
+
+    /* small responsive tweaks */
+    @media (max-width:520px){
+      .envelope{height:280px}
+      .letter{padding:18px}
+      .letter .content{font-size:16px}
+    }
+
+  </style>
+</head>
+<body>
+  <canvas id="confettiCanvas"></canvas>
+  <div class="bg-words" aria-hidden="true"><span>HAPPY BIRTHDAY</span></div>
+
+  <div class="stage">
+    <div class="envelope-wrap">
+
+      <div class="envelope" id="envelope" role="button" tabindex="0" aria-pressed="false" aria-label="Open the birthday letter">
+        <div class="flap" id="flap"></div>
+        <div class="body"></div>
+
+        <div class="letter" id="letter" aria-hidden="true">
+          <div class="content" id="letterContent">
+Happy Birthday to the most fun-loving, chaos-creating, happiness-spreading human I know! 🥳
+You’ve got that magical energy that makes every dull day brighter and every boring moment funny.
+
+As you step into another amazing year, I just want to say —
+May God bless you with everything that makes your heart smile.
+May your dreams grow bigger, your plans work out better, and your coffee stay stronger ☕😄
+Here’s to success that makes you proud, health that keeps you unstoppable, and happiness that never runs out.
+
+Stay the amazing, goofy, and golden-hearted soul you are — the world’s a lot more fun with you in it! 🌟
+
+With lots of love (and maybe some cake-stealing rights 🍰),
+Your favorite sibling,
+          </div>
+          <div class="signature">Astha 💛</div>
+        </div>
+      </div>
+
+      <div class="controls">
+        <button class="btn" id="toggleBtn">Open</button>
+        <button class="btn secondary" id="closeBtn">Close</button>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="balloon-stage" id="balloonStage"></div>
+
+  <script>
+    // ---------- Envelope open/close logic ----------
+    const envelope = document.getElementById('envelope');
+    const toggleBtn = document.getElementById('toggleBtn');
+    const closeBtn = document.getElementById('closeBtn');
+    const letter = document.getElementById('letter');
+    const balloonStage = document.getElementById('balloonStage');
+
+    let isOpen = false;
+
+    function openEnvelope(){
+      if(isOpen) return;
+      isOpen = true;
+      envelope.classList.add('open');
+      envelope.setAttribute('aria-pressed','true');
+      letter.setAttribute('aria-hidden','false');
+      toggleBtn.textContent = 'Opened';
+      // Generate balloons
+      spawnBalloons(18);
+    }
+    function closeEnvelope(){
+      if(!isOpen) return;
+      isOpen = false;
+      envelope.classList.remove('open');
+      envelope.setAttribute('aria-pressed','false');
+      letter.setAttribute('aria-hidden','true');
+      toggleBtn.textContent = 'Open';
+      // remove balloons gracefully
+      clearBalloons();
+    }
+
+    toggleBtn.addEventListener('click',()=>{ if(!isOpen) openEnvelope(); });
+    closeBtn.addEventListener('click',()=>{ if(isOpen) closeEnvelope(); });
+    envelope.addEventListener('click',()=>{ isOpen? closeEnvelope(): openEnvelope(); });
+    envelope.addEventListener('keydown',(e)=>{ if(e.key==='Enter' || e.key===' ') (isOpen? closeEnvelope(): openEnvelope()); });
+
+    // ---------- Balloons ----------
+    const BALLOON_COLORS = ['#ff7fb2','#ffd97a','#8fe3ff','#b1ffb8','#c29bff','#ffb3a7'];
+
+    function spawnBalloons(count=12){
+      for(let i=0;i<count;i++){
+        const b = document.createElement('div');
+        b.className = 'balloon';
+        const left = Math.random()*90; // position
+        b.style.left = left + '%';
+        const size = 36 + Math.random()*40; // width
+        b.style.width = size+'px';
+        b.style.height = (size*1.2)+'px';
+        b.style.borderRadius = (size*0.55)+'px';
+        b.style.background = `radial-gradient(circle at 35% 25%, rgba(255,255,255,0.55), transparent), ${BALLOON_COLORS[Math.floor(Math.random()*BALLOON_COLORS.length)]}`;
+        b.style.animationDuration = (6 + Math.random()*8)+'s';
+        b.style.animationDelay = (Math.random()*0.6)+'s';
+        // add string
+        const s = document.createElement('div'); s.className='string';
+        b.appendChild(s);
+        balloonStage.appendChild(b);
+        // remove after animation
+        setTimeout(()=>{ b.remove(); },14000);
+      }
+    }
+    function clearBalloons(){
+      // Remove existing balloons smoothly
+      const items = Array.from(balloonStage.children);
+      items.forEach((el,i)=>{ el.style.transition='opacity .6s'; el.style.opacity='0'; setTimeout(()=>el.remove(),700 + i*50); });
+    }
+
+    // ---------- Confetti background (canvas) ----------
+    const canvas = document.getElementById('confettiCanvas');
+    const ctx = canvas.getContext('2d');
+    resizeCanvas();
+    window.addEventListener('resize',resizeCanvas);
+
+    function resizeCanvas(){
+      canvas.width = innerWidth; canvas.height = innerHeight;
+    }
+
+    // make confetti pieces
+    const confetti = [];
+    const colors = ['#ff7fb2','#ffd97a','#8fe3ff','#b1ffb8','#c29bff','#ffffff'];
+    for(let i=0;i<110;i++){
+      confetti.push({
+        x:Math.random()*canvas.width,
+        y:Math.random()*canvas.height,
+        w:6 + Math.random()*10,
+        h:4 + Math.random()*6,
+        vy:0.3 + Math.random()*1.2,
+        vx:-0.6 + Math.random()*1.2,
+        angle:Math.random()*360,
+        spin: -0.02 + Math.random()*0.04,
+        color:colors[Math.floor(Math.random()*colors.length)],
+        alpha:0.6 + Math.random()*0.4
+      });
+    }
+
+    function updateConfetti(){
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      for(let p of confetti){
+        p.x += p.vx; p.y += p.vy; p.angle += p.spin;
+        if(p.y>canvas.height+20){ p.y = -20; p.x = Math.random()*canvas.width; }
+        if(p.x>canvas.width+20){ p.x = -20; }
+        if(p.x<-20){ p.x = canvas.width+20; }
+        ctx.save();
+        ctx.globalAlpha = p.alpha;
+        ctx.translate(p.x,p.y); ctx.rotate(p.angle);
+        ctx.fillStyle = p.color;
+        ctx.fillRect(-p.w/2,-p.h/2,p.w,p.h);
+        ctx.restore();
+      }
+      requestAnimationFrame(updateConfetti);
+    }
+    updateConfetti();
+
+    // ---------- Optional: trigger extra balloons when envelope opens repeatedly ----------
+    let openCount = 0;
+    envelope.addEventListener('click',()=>{ if(isOpen){ openCount++; if(openCount%2===1) spawnBalloons(8); } });
+
+    // ---------- Helpful note: keep the letter text EXACT as requested ----------
+    // The message content is in the #letterContent element (keeps user's exact spelling & emojis).
+
+  </script>
+</body>
+</html>
